@@ -1,153 +1,110 @@
-//breakout.odin
+package main
 
-package main;
-
-import "core:fmt"
-import "core:sys/win32"
-import "core:os"
-import "core:math"
 import "core:mem"
+import "core:math"
 
-
-
-WINDOW_WIDTH: i32 = 500;
-WINDOW_HEIGHT: i32 = 500;
-running: bool = true;
-
-frame_buffer: Win32_Buffer;
-
-
-Image_Buffer :: struct {
-	width: i32,
-	height: i32,
-	pitch: i32,
-	data: ^byte,
+Camera :: struct {
+	pos: math.Vec3,
+	dir: math.Vec3
 }
 
-
-Win32_Buffer :: struct {
-	bitmap_info: win32.Bitmap_Info,
-	using buffer: Image_Buffer
+Sphere :: struct {
+	center: math.Vec3,
+	radius: f32
 }
 
-
-initialize_buffer :: proc (buffer: ^Win32_Buffer, width: i32, height: i32) {
-	bytes_per_pixel : i32 = 4;
-	buffer.bitmap_info.size = size_of(win32.Bitmap_Info_Header);
-	buffer.bitmap_info.width = width;
-	buffer.bitmap_info.height = height;
-	buffer.bitmap_info.planes = 1;
-	buffer.bitmap_info.bit_count = 32;
-	buffer.bitmap_info.compression = win32.BI_RGB;
-
-	buffer.width = width;
-	buffer.height = height;
-	buffer.pitch = width * bytes_per_pixel;
-	buffer.data = cast(^byte)mem.alloc(int(width * height * bytes_per_pixel));
-	buffer.data = cast(^byte)mem.set(buffer.data, 0x55, int(width * height * bytes_per_pixel));
-
-
-	draw_rect(buffer, 10, 40, 100, 100);
-
-
-
-}
-
-
-push_buffer_to_window :: proc (hdc: win32.Hdc, buffer: ^Win32_Buffer, 
-							   window_width: i32, window_height: i32) -> i32 {
-
-	// fmt.printf("%d, %d, %d, %d\n",
-	// 	mem.ptr_offset(buffer.data,0),
-	// 	mem.ptr_offset(buffer.data,2),
-	// 	mem.ptr_offset(buffer.data,3),
-	// 	mem.ptr_offset(buffer.data,4));
-
-	return win32.stretch_dibits(
-		hdc,
-		0, 0, window_width, window_height,
-		0, 0, buffer.width, buffer.height,
-		buffer.data,
-		&(buffer.bitmap_info),
-		win32.DIB_RGB_COLORS,
-		win32.SRCCOPY);
+World :: struct {
+	s: Sphere,
+	c: Camera
 }
 
 
 
 
-window_proc :: proc "c" (hwnd: win32.Hwnd, uMsg: u32, wParam: win32.Wparam, lParam: win32.Lparam) -> win32.Lresult {
-	switch uMsg {
-		case win32.WM_DESTROY, win32.WM_QUIT:
-			running = false;
+initialize_world :: proc (world: ^World) {
+	world.s.radius = 1;
+	world.s.center = math.Vec3{0.0, 0.0, -10};
+	world.c.pos = math.Vec3{0.0, 0.0, 0.0};
+	world.c.dir = math.Vec3{0.0, 0.0, -1.0};
+}
+
+
+intersect_sphere :: proc (s: Sphere, rayorig: math.Vec3, raydir: math.Vec3, t0: ^f32, t1: ^f32) -> bool {
+	l: math.Vec3 = s.center - rayorig;
+	tca: f32 = math.dot(l, raydir);
+	if (tca < 0) do return false;
+	d2: f32 = math.dot(l, l) - tca * tca;
+	if (d2 > s.radius * s.radius) do return false;
+	thc: f32 = math.sqrt((s.radius * s.radius) - d2);
+	t0^ = tca - thc;
+	t1^ = tca + thc;
+
+	return true;
+}
+
+buffer_coords_to_film_point :: proc(buffer: ^Image_Buffer, camera: ^Camera, x: int, y: int) -> math.Vec3 {
+	origin := camera.pos;
+	camera_z := math.norm(camera.dir) * -1;
+	camera_x : math.Vec3 = math.norm(math.cross(camera_z, math.Vec3{0, -1, 0}));
+	camera_y := math.norm(math.cross(camera_z, camera_x));
+
+	film_dist: f32 = 1.0;
+	film_w: f32 = f32(buffer.width) / f32(buffer.height);
+	film_h: f32 = 1.0;
+	half_film_w := film_w * 0.5;
+	half_film_h := film_h * 0.5;
+	film_center := origin - camera_z * film_dist;
+
+	film_x := 2.0 * (f32(x) / f32(buffer.width)) - 1.0;
+	film_y := 2.0 * (f32(y) / f32(buffer.height)) - 1.0;
+	film_p := film_center + (camera_y * film_y * half_film_h) + (film_x * half_film_w * camera_x);
+	return film_p;
+}
+
+
+ray_cast :: proc (origin: math.Vec3, dir: math.Vec3, world: ^World) -> bool {
+	t0: f32 = math.F32_MAX;
+	t1: f32 = math.F32_MAX;
+	return intersect_sphere(world.s, origin, dir, &t0, &t1);
+}
+
+
+render :: proc (buffer: ^Image_Buffer, world: ^World) {
+	//draw_rect(buffer, 100, 100, 100, 100);
+	origin := world.c.pos;
+	camera_z := math.norm(world.c.dir) * -1;
+	camera_x : math.Vec3 = math.norm(math.cross(camera_z, math.Vec3{0, -1, 0}));
+	camera_y := math.norm(math.cross(camera_z, camera_x));
+
+	film_dist: f32 = 1.0;
+	film_w: f32 = f32(buffer.width) / f32(buffer.height);
+	film_h: f32 = 1.0;
+	half_film_w := film_w * 0.5;
+	half_film_h := film_h * 0.5;
+	film_center := origin - camera_z * film_dist;
+
+	pixel: ^u32 = cast(^u32)buffer.data;
+	for y: i32 = 0; y < buffer.height; y += 1 {
+		film_y := 2.0 * (f32(y) / f32(buffer.height)) - 1.0;
+		for x: i32 = 0; x < buffer.width; x += 1 {
+			film_x := 2.0 * (f32(x) / f32(buffer.width)) - 1.0;
+			film_p := film_center + (camera_y * film_y * half_film_h) + (film_x * half_film_w * camera_x);
+
+			ray_dir: math.Vec3 = math.norm(film_p - origin);
+			if(ray_cast(origin, ray_dir, world)) do pixel^ = 0x0000ff00;
+			pixel = mem.ptr_offset(pixel, 1);
+		}
 	}
 
-	dc: win32.Hdc = win32.get_dc(hwnd);
-	res: i32 = push_buffer_to_window(dc, &frame_buffer, WINDOW_WIDTH, WINDOW_HEIGHT);
-	//fmt.printf("res: %d\n", res);
-	win32.release_dc(hwnd, dc);
-
-	return win32.def_window_proc_a(hwnd, uMsg, wParam, lParam);
 }
 
 
-
-main :: proc() {
-	instance: win32.Hinstance = cast(win32.Hinstance) win32.get_module_handle_a(nil);
-	fmt.printf("hande: %d\n", instance);
-
-	wc: win32.Wnd_Class_Ex_A;
-	wc.size = size_of(win32.Wnd_Class_Ex_A);
-	wc.instance = instance;
-	wc.wnd_proc = window_proc;
-	wc.class_name = "ray";
-
-	res: i16 = win32.register_class_ex_a(&wc);
-
-	if(res == 0) {
-		fmt.printf("Class was not registered correctly\n");
-		os.exit(1);
-	}
-
-	style: u32 = win32.WS_CAPTION | win32.WS_SYSMENU | win32.WS_MINIMIZEBOX | win32.WS_VISIBLE;
-
-	r: win32.Rect;
-	r.right = WINDOW_WIDTH;
-	r.bottom = WINDOW_HEIGHT;
-	win32.adjust_window_rect(&r, style, false);
-
-	window: win32.Hwnd = win32.create_window_ex_a(
-		0, 
-		"ray", 
-		"Elon Musk in the Title", 
-		style,
-		100, 100, r.right - r.left, r.bottom - r.top,
-		nil,
-		nil,
-		instance,
-		nil
-		);
-
-	
-	if (window == nil) {
-		fmt.printf("Window was not created successfully\n");
-		os.exit(1);
-	}
-
-	fmt.printf("%d\n", frame_buffer.data);
-	initialize_buffer(&frame_buffer, WINDOW_WIDTH, WINDOW_HEIGHT);
-	fmt.print(frame_buffer);
-
-	win32.show_window(window, win32.SW_SHOW);
-
-	//game loop
-	for ; running ; {
-
-		//message loop
-		message: win32.Msg;
-    	for ; win32.peek_message_a(&message, nil, 0, 0, win32.PM_REMOVE); {
-        	win32.translate_message(&message);
-       	 	win32.dispatch_message_a(&message);
-    	}
+draw_rect :: proc(buffer: ^Image_Buffer, x: int, y: int, width: int, height: int) {
+	for yy := y ; yy < y + height; yy += 1 {
+		for xx := x; xx < x + width; xx += 1 {
+			row: ^u32 = cast(^u32)(mem.ptr_offset(buffer.data, yy * int(buffer.pitch)));
+			pixel: ^u32 = cast(^u32)(mem.ptr_offset(row, xx));
+			pixel^ = 0x0000ffff;
+		}
 	}
 }
