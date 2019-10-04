@@ -25,6 +25,21 @@ World :: struct {
 
 
 
+generate_spheres :: proc (spheres: ^[dynamic]Sphere, range: f32, count: int){
+	for i := 0; i < count; i += 1 {
+		s : Sphere = {
+			math.Vec3{
+				rand.float32_range(-range, range),
+				rand.float32_range(-range, range),
+				rand.float32_range(-range, range)
+			}, 1, rand.uint32()};
+		append(spheres, s);
+	}
+}
+
+
+
+
 
 initialize_world :: proc (world: ^World) {
 
@@ -33,6 +48,9 @@ initialize_world :: proc (world: ^World) {
 
 	s2: Sphere = {math.Vec3{2,0,0}, 1, rand.uint32()};
 	append(&world.spheres, s2);
+
+
+	generate_spheres(&world.spheres, 7, 10);
 
 	// world.s[0].radius = 1;
 	// world.s[0].center = math.Vec3{ 2, 0, -10};
@@ -117,21 +135,21 @@ draw_rect :: proc(buffer: ^Image_Buffer, x: int, y: int, width: int, height: int
 
 update :: proc (world: ^World) {
 	//assuming camera desires to rotate around the world origin
-	dist: f32 = math.length(world.camera.pos);
-	fmt.printf("length: %f\n", dist);
-	theta: f32 = 0.05;
-	//world.camera.pos.x += 0.01;
+	// dist: f32 = math.length(world.camera.pos);
+	// fmt.printf("length: %f\n", dist);
+	// theta: f32 = 0.05;
+	// //world.camera.pos.x += 0.01;
 
-	x := world.camera.pos.x;
-	z := world.camera.pos.z;
-	newx := x * math.cos(theta) - z * math.sin(theta);
-	newz := z * math.cos(theta) + x * math.sin(theta);
+	// x := world.camera.pos.x;
+	// z := world.camera.pos.z;
+	// newx := x * math.cos(theta) - z * math.sin(theta);
+	// newz := z * math.cos(theta) + x * math.sin(theta);
 
-	world.camera.pos.x = newx;
-	world.camera.pos.z = newz;
+	// world.camera.pos.x = newx;
+	// world.camera.pos.z = newz;
 
-	world.camera.dir.x = -newx / dist;
-	world.camera.dir.z = -newz / dist;
+	// world.camera.dir.x = -newx / dist;
+	// world.camera.dir.z = -newz / dist;
 
 }
 
@@ -153,9 +171,9 @@ render :: proc (buffer: ^Image_Buffer, world: ^World) {
 
 	//pixel: ^u32 = cast(^u32)buffer.data;
 	base_ptr: ^u32 = cast(^u32)buffer.data;
-	for y: i32 = 0; y < buffer.height; y += 2 {
+	for y: i32 = 0; y < buffer.height; y += 1 {
 		film_y := 2.0 * (f32(y) / f32(buffer.height)) - 1.0;
-		for x: i32 = 0; x < buffer.width; x += 2 {
+		for x: i32 = 0; x < buffer.width; x += 1 {
 
 			pixel: ^u32 = mem.ptr_offset(base_ptr, int(x + y * buffer.width));
 
