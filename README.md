@@ -5,4 +5,4 @@ Credits to gingerBill of course for the creation of the wonderful Odin language
 
 Credits to Per Vognsen for the design of his Mu and Noir platform layers, which I intend to follow with my humble PL.
 
-Credits to scratchapixel.com for their excellent 3d graphics tutorials, especially the ray tracing lessons (of course)
+Credits to scratchapixel.com for their excellent 3d graphics tutorials, especially the ray tracing lessons
