@@ -50,10 +50,15 @@ PL :: struct {
 	frame_buffer: Image_Buffer, 
 	error: ^byte,
 
+
+	delta_time_seconds: f64,
+	time_seconds: f64,
+
 	//windows specific
 	device_context: win32.Hdc,
 	win32_window_handle: win32.Hwnd,
-	bitmap_info: win32.Bitmap_Info
+	bitmap_info: win32.Bitmap_Info,
+	performance_counter_freq: i64,
 
 }
 
@@ -135,6 +140,11 @@ win32_init :: proc (pl: ^PL, title: cstring) -> int {
 
 	win32.show_window(pl.win32_window_handle, win32.SW_SHOW);
 
+	win32.query_performance_frequency(&pl.performance_counter_freq);
+	current_count: i64;
+	win32.query_performance_counter(&current_count);
+	pl.time_seconds = f64(current_count) / f64(pl.performance_counter_freq);
+
 	//TODO: detect failure
 	return 1;
 }
@@ -199,4 +209,11 @@ pull :: proc (pl: ^PL) {
 	pl.mouse.delta_x = pl.mouse.x - oldmousex;
 	pl.mouse.delta_y = pl.mouse.y - oldmousey;
 
+
+
+	ticks: i64;
+	win32.query_performance_counter(&ticks);	
+	now: f64 = f64(ticks) / f64(pl.performance_counter_freq);
+	pl.delta_time_seconds = now - pl.time_seconds;
+	pl.time_seconds = now;
 }
