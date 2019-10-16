@@ -10,9 +10,9 @@ import "pl"
 
 
 Material :: struct {
-	color: math.Vec3
+	color: math.Vec3,
+	reflective_index: f32
 }
-
 
 
 Camera :: struct {
@@ -26,8 +26,16 @@ Sphere :: struct {
 	mat: Material
 }
 
+
+Plane :: struct {
+	p: math.Vec3,
+	n: math.Vec3
+}	
+
+
 World :: struct {
 	spheres: [dynamic]Sphere,
+	plane: Plane,
 	camera: Camera
 }
 
@@ -60,7 +68,7 @@ generate_spheres :: proc (spheres: ^[dynamic]Sphere, range: f32, count: int){
 				rand.float32_range(-range, range),
 				rand.float32_range(-range, range),
 				rand.float32_range(-range, range)
-			}, 1, Material{rand_v3()}};
+			}, 1, Material{rand_v3(), 0.5}};
 		append(spheres, s);
 	}
 }
@@ -72,12 +80,56 @@ generate_spheres :: proc (spheres: ^[dynamic]Sphere, range: f32, count: int){
 initialize_world :: proc (world: ^World) {
 
 
-	generate_spheres(&world.spheres, 7, 10);
+	generate_spheres(&world.spheres, 7, 20);
 
+	// s0: Sphere;
+	// s0.mat = {color={1,0,0}, reflective_index=0.8};
+	// s0.center = {-3,4,0};
+	// s0.radius = 3;
+
+	// s1: Sphere;
+	// s1.mat = {color={0,1,0}, reflective_index=0.2};
+	// s1.center = {3,4,0};
+	// s1.radius = 3;
+
+	// append(&world.spheres, s0);
+	// append(&world.spheres, s1);
+
+	world.plane = {p={0, -1, 0}, n={0,1,0}};
 
 	world.camera.pos = math.Vec3{0.0, 0.0, 20.0};
 	world.camera.dir = math.Vec3{0.0, 0.0, -1.0};
 }
+
+intersect_plane :: proc(p: Plane, rayorig: math.Vec3, raydir: math.Vec3, t: ^f32) -> bool {
+	denom := math.dot(p.n, raydir);
+	if(denom > 0.00000001 || -denom > 0.00000001) {
+		t^ = math.dot(p.p - rayorig, p.n) / denom;
+		point := (t^ * raydir) + rayorig;
+		return t^ > 0;
+	}
+	return false;
+}
+
+/*
+bool IntersectPlane(plane Plane, v3 l0, v3 l, float *t)
+{
+    // assuming vectors are all normalized
+    v3 p0 = {};
+    p0.x = Plane.N.x * Plane.d;
+    p0.y = Plane.N.y * Plane.d;
+    p0.z = Plane.N.z * Plane.d;
+    
+    float denom = dotProduct(Plane.N, l);
+    if (denom > 1e-6 || -denom > 1e-6) {
+        v3 p0l0 = p0 - l0;
+        *t = (Plane.d - dotProduct(p0l0, Plane.N)) / denom;
+        return (t >= 0);
+    }
+    return false;
+}
+*/
+
 
 
 intersect_sphere :: proc (s: Sphere, rayorig: math.Vec3, raydir: math.Vec3, t0: ^f32, t1: ^f32) -> bool {
@@ -113,36 +165,46 @@ buffer_coords_to_film_point :: proc(buffer: ^pl.Image_Buffer, camera: ^Camera, x
 }
 
 
-ray_cast :: proc (origin: math.Vec3, dir: math.Vec3, world: ^World) -> math.Vec3 {
+ray_cast :: proc (origin: math.Vec3, dir: math.Vec3, world: ^World, depth: int) -> math.Vec3 {
 	t0: f32 = math.F32_MAX;
 	t1: f32 = math.F32_MAX;
 	hit_distance: f32 = math.F32_MAX;
-	hit: bool;
 	hit_color: math.Vec3;
 	//cast against spheres
 	for i := 0; i < len(world.spheres); i += 1 {
-		if(intersect_sphere(world.spheres[i], origin, dir, &t0, &t1)) {
-			if(!hit) {
-				//first hit does not merge with black
-				hit = true;
-				hit_color = world.spheres[i].mat.color;
-			} else {
-				hit_color = (hit_color + world.spheres[i].mat.color) / 2;
-			}
-
+		s := world.spheres[i];
+		if(intersect_sphere(s, origin, dir, &t0, &t1)) {
+			//first hit does not merge with black
+			
 			if(t0 < 0) do t0 = t1;
 			if(t0 < hit_distance) {
+				if(s.mat.reflective_index > 0 && depth > 0) {
+					//cast reflective ray;
+					hit_point := origin + (dir * t0);
+					l := math.norm(-dir);
+					normal := math.norm(hit_point - s.center);
+					b := math.dot(l, normal) * normal;
+
+					r := 2*(b - l) + l;
+					bias : f32 = 0.0000001;
+					hit_color = s.mat.color * (1 - s.mat.reflective_index) +
+								s.mat.reflective_index * ray_cast(hit_point + normal * bias, math.norm(r), world, depth - 1);
+				} else {
+					hit_color = s.mat.color;
+				}
 				hit_distance = t0;
 			}
-			
 		}
 	}
-	
-	if(hit) {
-		return hit_color;
-	} else {
-		return {0, 0, 0};
+	//cast against planes
+	p := world.plane;
+	t: f32;
+	if (intersect_plane(p, origin, dir, &t)) {
+		if t < hit_distance {
+			hit_color = {0.5, 0.5, 0.5};
+		}
 	}
+	return hit_color;
 }
 
 
@@ -176,7 +238,7 @@ update :: proc (world: ^World, pl_ctx: ^pl.PL) {
 			main_world.camera.dir.z = -newz / dist;
 		}
 
-		when false {
+		when true {
 			x := main_world.camera.pos.x;
 			y := main_world.camera.pos.y;
 			newx := x * math.cos(vert_theta) - y * math.sin(vert_theta);
@@ -189,13 +251,14 @@ update :: proc (world: ^World, pl_ctx: ^pl.PL) {
 		}
 	}
 
-
 	if(pl_ctx.keys[0].isDown && !pl_ctx.keys[0].wasDown) {
 		generate_spheres(&world.spheres, 7, 1);
 	}
-
-
 }
+
+
+
+
 
 
 
@@ -212,6 +275,10 @@ render :: proc (world: ^World, buffer: ^pl.Image_Buffer) {
 	half_film_w := film_w * 0.5;
 	half_film_h := film_h * 0.5;
 	film_center := origin - camera_z * film_dist;
+	pixel_width := film_w / f32(buffer.width);
+	pixel_height := film_h / f32(buffer.height);
+
+
 
 	base_ptr: ^u32 = cast(^u32)buffer.data;
 	for y: i32 = 0; y < buffer.height; y += 1 {
@@ -223,9 +290,9 @@ render :: proc (world: ^World, buffer: ^pl.Image_Buffer) {
 
 			film_x := 2.0 * (f32(x) / f32(buffer.width)) - 1.0;
 			film_p := film_center + (camera_y * film_y * half_film_h) + (film_x * half_film_w * camera_x);
-
 			ray_dir: math.Vec3 = math.norm(film_p - origin);
-			pixel^ = v3_to_u32(ray_cast(origin, ray_dir, world));
+
+			pixel^ = v3_to_u32(ray_cast(origin, ray_dir, world, 3));
 		}
 	}
 }
