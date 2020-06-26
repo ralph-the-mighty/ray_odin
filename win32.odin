@@ -12,8 +12,8 @@ main :: proc() {
 	pl_ctx: pl.PL;
 	pl_ctx.window.x = 100;
 	pl_ctx.window.y = 100;
-	pl_ctx.window.width = 640;
-	pl_ctx.window.height = 480;
+	pl_ctx.window.width = 800;
+	pl_ctx.window.height = 450;
 
 	pl.init(&pl_ctx, "ray");
 

@@ -72,7 +72,7 @@ init :: proc (pl: ^PL, title: cstring) -> int {
 	when os.OS == "windows" {
 		res = win32_init(pl, title);
 	} else {
-		fmt.println("PL: OPERATING SYSTEM NOT SUPPORTED");
+		fmt.eprintln("PL: OPERATING SYSTEM NOT SUPPORTED");
 		res = -1;
 	}
 	pl.running = true;
@@ -85,7 +85,7 @@ win32_init :: proc (pl: ^PL, title: cstring) -> int {
 	wc: win32.Wnd_Class_Ex_A;
 	wc.size = size_of(win32.Wnd_Class_Ex_A);
 	wc.instance = instance;
-	wc.wnd_proc = window_proc;
+	wc.wnd_proc = cast(win32.Wnd_Proc)window_proc;
 	wc.class_name = title;
 
 	res: i16 = win32.register_class_ex_a(&wc);
@@ -154,7 +154,6 @@ window_proc :: proc "c" (hwnd: win32.Hwnd, uMsg: u32, wParam: win32.Wparam, lPar
 	pl: ^PL = cast(^PL)uintptr(win32.get_window_long_ptr_a(hwnd, win32.GWLP_USERDATA));
 	switch uMsg {
 		case win32.WM_DESTROY, win32.WM_QUIT:
-			fmt.println("Quitting!!");
 			pl.running = false;
 		case win32.WM_MOUSEMOVE:
 		 	pl.mouse.x = cast(i32)lParam & 0xffff;

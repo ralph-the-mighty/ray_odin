@@ -2,6 +2,7 @@ package main
 
 import "core:mem"
 import "core:math"
+import "core:math/linalg"
 import "core:fmt"
 import "core:math/rand"
 import "pl"
@@ -10,39 +11,41 @@ import "pl"
 
 
 Material :: struct {
-	color: math.Vec3,
+	color: linalg.Vector3,
 	reflective_index: f32
 }
 
 
 Camera :: struct {
-	pos: math.Vec3,
-	dir: math.Vec3
+	pos: linalg.Vector3,
+	dir: linalg.Vector3
 }
 
 Sphere :: struct {
-	center: math.Vec3,
+	center: linalg.Vector3,
 	radius: f32,
 	mat: Material
 }
 
 
 Plane :: struct {
-	p: math.Vec3,
-	n: math.Vec3
+	p: linalg.Vector3,
+	n: linalg.Vector3,
+	mat: Material
 }	
 
 
 World :: struct {
 	spheres: [dynamic]Sphere,
 	plane: Plane,
-	camera: Camera
+	camera: Camera,
+	light: linalg.Vector3
 }
 
 
 
 
-v3_to_u32 :: proc(v: math.Vec3) -> u32 {
+v3_to_u32 :: proc(v: linalg.Vector3) -> u32 {
 	pixel: u32 = (u32(v.x * 255) << 16) |
 				 (u32(v.y * 255) << 8) |
 				 (u32(v.z * 255));
@@ -50,8 +53,8 @@ v3_to_u32 :: proc(v: math.Vec3) -> u32 {
 }
 
 
-rand_v3 :: proc() -> math.Vec3 {
-	return math.Vec3{rand.float32_range(0, 1),
+rand_v3 :: proc() -> linalg.Vector3 {
+	return linalg.Vector3{rand.float32_range(0, 1),
 				     rand.float32_range(0, 1),
 				     rand.float32_range(0, 1)};
 				     
@@ -64,11 +67,11 @@ rand_v3 :: proc() -> math.Vec3 {
 generate_spheres :: proc (spheres: ^[dynamic]Sphere, range: f32, count: int){
 	for i := 0; i < count; i += 1 {
 		s : Sphere = {
-			math.Vec3{
+			linalg.Vector3{
 				rand.float32_range(-range, range),
 				rand.float32_range(-range, range),
 				rand.float32_range(-range, range)
-			}, 1, Material{rand_v3(), 0.5}};
+			}, 1, Material{rand_v3(), 0.0}};
 		append(spheres, s);
 	}
 }
@@ -79,8 +82,11 @@ generate_spheres :: proc (spheres: ^[dynamic]Sphere, range: f32, count: int){
 
 initialize_world :: proc (world: ^World) {
 
-
-	generate_spheres(&world.spheres, 7, 20);
+	light_sphere: Sphere;
+	light_sphere.mat.color = {1,1,1};
+	light_sphere.radius = .1;
+	append(&world.spheres, light_sphere);
+	generate_spheres(&world.spheres, 7, 5);
 
 	// s0: Sphere;
 	// s0.mat = {color={1,0,0}, reflective_index=0.8};
@@ -95,16 +101,24 @@ initialize_world :: proc (world: ^World) {
 	// append(&world.spheres, s0);
 	// append(&world.spheres, s1);
 
-	world.plane = {p={0, -1, 0}, n={0,1,0}};
+	world.plane = {
+		p = {0, -7, 0}, 
+		n = {0,1,0}, 
+		mat = {
+			color = linalg.Vector3{0.5, 0.5, 0.5},
+			reflective_index = 0
+		}
+	};
+	world.camera.pos = linalg.Vector3{0.0, 0.0, 20.0};
+	world.camera.dir = linalg.Vector3{0.0, 0.0, -1.0};
+	world.light = linalg.Vector3{0.0, 10.0, 0.0};
 
-	world.camera.pos = math.Vec3{0.0, 0.0, 20.0};
-	world.camera.dir = math.Vec3{0.0, 0.0, -1.0};
 }
 
-intersect_plane :: proc(p: Plane, rayorig: math.Vec3, raydir: math.Vec3, t: ^f32) -> bool {
-	denom := math.dot(p.n, raydir);
+intersect_plane :: proc(p: Plane, rayorig: linalg.Vector3, raydir: linalg.Vector3, t: ^f32) -> bool {
+	denom := linalg.dot(p.n, raydir);
 	if(denom > 0.00000001 || -denom > 0.00000001) {
-		t^ = math.dot(p.p - rayorig, p.n) / denom;
+		t^ = linalg.dot(p.p - rayorig, p.n) / denom;
 		point := (t^ * raydir) + rayorig;
 		return t^ > 0;
 	}
@@ -132,11 +146,11 @@ bool IntersectPlane(plane Plane, v3 l0, v3 l, float *t)
 
 
 
-intersect_sphere :: proc (s: Sphere, rayorig: math.Vec3, raydir: math.Vec3, t0: ^f32, t1: ^f32) -> bool {
-	l: math.Vec3 = s.center - rayorig;
-	tca: f32 = math.dot(l, raydir);
+intersect_sphere :: proc (s: Sphere, rayorig: linalg.Vector3, raydir: linalg.Vector3, t0: ^f32, t1: ^f32) -> bool {
+	l: linalg.Vector3 = s.center - rayorig;
+	tca: f32 = linalg.dot(l, raydir);
 	if (tca < 0) do return false;
-	d2: f32 = math.dot(l, l) - tca * tca;
+	d2: f32 = linalg.dot(l, l) - tca * tca;
 	if (d2 > s.radius * s.radius) do return false;
 	thc: f32 = math.sqrt((s.radius * s.radius) - d2);
 	t0^ = tca - thc;
@@ -145,11 +159,11 @@ intersect_sphere :: proc (s: Sphere, rayorig: math.Vec3, raydir: math.Vec3, t0: 
 	return true;
 }
 
-buffer_coords_to_film_point :: proc(buffer: ^pl.Image_Buffer, camera: ^Camera, x: int, y: int) -> math.Vec3 {
+buffer_coords_to_film_point :: proc(buffer: ^pl.Image_Buffer, camera: ^Camera, x: int, y: int) -> linalg.Vector3 {
 	origin := camera.pos;
-	camera_z := math.norm(camera.dir) * -1;
-	camera_x : math.Vec3 = math.norm(math.cross(camera_z, math.Vec3{0, -1, 0}));
-	camera_y := math.norm(math.cross(camera_z, camera_x));
+	camera_z := linalg.normalize(camera.dir) * -1;
+	camera_x : linalg.Vector3 = linalg.normalize(linalg.cross(camera_z, linalg.Vector3{0, -1, 0}));
+	camera_y := linalg.normalize(linalg.cross(camera_z, camera_x));
 
 	film_dist: f32 = 1.0;
 	film_w: f32 = f32(buffer.width) / f32(buffer.height);
@@ -165,34 +179,33 @@ buffer_coords_to_film_point :: proc(buffer: ^pl.Image_Buffer, camera: ^Camera, x
 }
 
 
-ray_cast :: proc (origin: math.Vec3, dir: math.Vec3, world: ^World, depth: int) -> math.Vec3 {
+ray_cast :: proc (origin: linalg.Vector3, dir: linalg.Vector3, world: ^World, depth: int) -> linalg.Vector3 {
 	t0: f32 = math.F32_MAX;
 	t1: f32 = math.F32_MAX;
 	hit_distance: f32 = math.F32_MAX;
-	hit_color: math.Vec3;
+	hit_color: linalg.Vector3;
+	hit: bool;
 	//cast against spheres
 	for i := 0; i < len(world.spheres); i += 1 {
 		s := world.spheres[i];
 		if(intersect_sphere(s, origin, dir, &t0, &t1)) {
-			//first hit does not merge with black
-			
+			hit = true;
 			if(t0 < 0) do t0 = t1;
 			if(t0 < hit_distance) {
+				hit_distance = t0;
 				if(s.mat.reflective_index > 0 && depth > 0) {
 					//cast reflective ray;
-					hit_point := origin + (dir * t0);
-					l := math.norm(-dir);
-					normal := math.norm(hit_point - s.center);
-					b := math.dot(l, normal) * normal;
-
+					hit_point := origin + (dir * hit_distance);
+					l := linalg.normalize(-dir);
+					normal := linalg.normalize(hit_point - s.center);
+					b := linalg.dot(l, normal) * normal;
 					r := 2*(b - l) + l;
 					bias : f32 = 0.0000001;
-					hit_color = s.mat.color * (1 - s.mat.reflective_index) +
-								s.mat.reflective_index * ray_cast(hit_point + normal * bias, math.norm(r), world, depth - 1);
+					hit_color = (1 - s.mat.reflective_index) * s.mat.color +
+								(s.mat.reflective_index) * ray_cast(hit_point + normal * bias, linalg.normalize(r), world, depth - 1);
 				} else {
 					hit_color = s.mat.color;
 				}
-				hit_distance = t0;
 			}
 		}
 	}
@@ -200,10 +213,33 @@ ray_cast :: proc (origin: math.Vec3, dir: math.Vec3, world: ^World, depth: int) 
 	p := world.plane;
 	t: f32;
 	if (intersect_plane(p, origin, dir, &t)) {
+		hit = true;
 		if t < hit_distance {
-			hit_color = {0.5, 0.5, 0.5};
+			hit_distance = t;
+			hit_color = p.mat.color;
 		}
 	}
+
+	//shadows
+
+	light := world.light;
+	hit_point := origin + dir * hit_distance;
+	for i := 1; i < len(world.spheres); i += 1 {
+
+		s := world.spheres[i];
+		_t0: f32;
+		_t1: f32;
+		if(intersect_sphere(s, hit_point, linalg.normalize(world.light - hit_point), &_t0, &_t1)) {
+			if(_t1 < _t0) do _t0 = _t1;
+			if(_t0 < linalg.length(light - hit_point)) {
+				hit_color *= 0.5;
+				break;
+			}
+		}
+	}
+	// dist_from_light : f32 = linalg.length(world.light - hit_point);
+	// intensity := 11 / dist_from_light;
+	// hit_color *= intensity;
 	return hit_color;
 }
 
@@ -222,7 +258,7 @@ draw_rect :: proc(buffer: ^pl.Image_Buffer, x: int, y: int, width: int, height: 
 
 update :: proc (world: ^World, pl_ctx: ^pl.PL) {
 	if(pl_ctx.mouse.left.isDown) {
-		dist: f32 = math.length(main_world.camera.pos);
+		dist: f32 = linalg.length(main_world.camera.pos);
 		horiz_theta: f32 = 0.005 * f32(pl_ctx.mouse.delta_x);
 		vert_theta:  f32 = 0.005 * f32(pl_ctx.mouse.delta_y);
 
@@ -254,6 +290,11 @@ update :: proc (world: ^World, pl_ctx: ^pl.PL) {
 	if(pl_ctx.keys[0].isDown && !pl_ctx.keys[0].wasDown) {
 		generate_spheres(&world.spheres, 7, 1);
 	}
+
+
+	world.light.y = 2 + f32(math.sin(pl_ctx.time_seconds));
+	world.spheres[0].center = world.light;
+
 }
 
 
@@ -265,9 +306,9 @@ update :: proc (world: ^World, pl_ctx: ^pl.PL) {
 render :: proc (world: ^World, buffer: ^pl.Image_Buffer) {
 
 	origin := world.camera.pos;
-	camera_z := math.norm(world.camera.dir) * -1;
-	camera_x : math.Vec3 = math.norm(math.cross(camera_z, math.Vec3{0, -1, 0}));
-	camera_y := math.norm(math.cross(camera_z, camera_x));
+	camera_z := linalg.normalize(world.camera.dir) * -1;
+	camera_x : linalg.Vector3 = linalg.normalize(linalg.cross(camera_z, linalg.Vector3{0, -1, 0}));
+	camera_y := linalg.normalize(linalg.cross(camera_z, camera_x));
 
 	film_dist: f32 = 1.0;
 	film_w: f32 = f32(buffer.width) / f32(buffer.height);
@@ -290,9 +331,9 @@ render :: proc (world: ^World, buffer: ^pl.Image_Buffer) {
 
 			film_x := 2.0 * (f32(x) / f32(buffer.width)) - 1.0;
 			film_p := film_center + (camera_y * film_y * half_film_h) + (film_x * half_film_w * camera_x);
-			ray_dir: math.Vec3 = math.norm(film_p - origin);
+			ray_dir: linalg.Vector3 = linalg.normalize(film_p - origin);
 
-			pixel^ = v3_to_u32(ray_cast(origin, ray_dir, world, 3));
+			pixel^ = v3_to_u32(ray_cast(origin, ray_dir, world, 1));
 		}
 	}
 }
