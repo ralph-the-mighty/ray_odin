@@ -86,6 +86,7 @@ win32_init :: proc (pl: ^PL, title: cstring) -> int {
 	wc.size = size_of(win32.Wnd_Class_Ex_A);
 	wc.instance = instance;
 	wc.wnd_proc = cast(win32.Wnd_Proc)window_proc;
+	wc.cursor = win32.load_cursor_a(nil, win32.IDC_ARROW);
 	wc.class_name = title;
 
 	res: i16 = win32.register_class_ex_a(&wc);
