@@ -71,7 +71,7 @@ generate_spheres :: proc (spheres: ^[dynamic]Sphere, range: f32, count: int){
 				rand.float32_range(-range, range),
 				rand.float32_range(-range, range),
 				rand.float32_range(-range, range)
-			}, 1, Material{rand_v3(), 0.0}};
+			}, 1, Material{rand_v3(), 0.5}};
 		append(spheres, s);
 	}
 }
@@ -237,6 +237,7 @@ ray_cast :: proc (origin: linalg.Vector3, dir: linalg.Vector3, world: ^World, de
 			}
 		}
 	}
+
 	// dist_from_light : f32 = linalg.length(world.light - hit_point);
 	// intensity := 11 / dist_from_light;
 	// hit_color *= intensity;
