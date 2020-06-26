@@ -71,7 +71,7 @@ generate_spheres :: proc (spheres: ^[dynamic]Sphere, range: f32, count: int){
 				rand.float32_range(-range, range),
 				rand.float32_range(-range, range),
 				rand.float32_range(-range, range)
-			}, 1, Material{rand_v3(), 0.5}};
+			}, 1, Material{rand_v3(), 0.0}};
 		append(spheres, s);
 	}
 }
@@ -186,8 +186,7 @@ ray_cast :: proc (origin: linalg.Vector3, dir: linalg.Vector3, world: ^World, de
 	hit_color: linalg.Vector3;
 	hit: bool;
 	//cast against spheres
-	for i := 0; i < len(world.spheres); i += 1 {
-		s := world.spheres[i];
+	for s in world.spheres {
 		if(intersect_sphere(s, origin, dir, &t0, &t1)) {
 			hit = true;
 			if(t0 < 0) do t0 = t1;
@@ -224,9 +223,8 @@ ray_cast :: proc (origin: linalg.Vector3, dir: linalg.Vector3, world: ^World, de
 
 	light := world.light;
 	hit_point := origin + dir * hit_distance;
-	for i := 1; i < len(world.spheres); i += 1 {
-
-		s := world.spheres[i];
+	for i in 1..<len(world.spheres) {
+	 	s := world.spheres[i];
 		_t0: f32;
 		_t1: f32;
 		if(intersect_sphere(s, hit_point, linalg.normalize(world.light - hit_point), &_t0, &_t1)) {
@@ -246,8 +244,8 @@ ray_cast :: proc (origin: linalg.Vector3, dir: linalg.Vector3, world: ^World, de
 
 
 draw_rect :: proc(buffer: ^pl.Image_Buffer, x: int, y: int, width: int, height: int) {
-	for yy := y ; yy < y + height; yy += 1 {
-		for xx := x; xx < x + width; xx += 1 {
+	for yy in x..<(y + height) {
+		for xx in x..<(x + width) {
 			row: ^u32 = cast(^u32)(mem.ptr_offset(buffer.data, yy * int(buffer.pitch)));
 			pixel: ^u32 = cast(^u32)(mem.ptr_offset(row, xx));
 			pixel^ = 0x0000ffff;
@@ -323,9 +321,9 @@ render :: proc (world: ^World, buffer: ^pl.Image_Buffer) {
 
 
 	base_ptr: ^u32 = cast(^u32)buffer.data;
-	for y: i32 = 0; y < buffer.height; y += 1 {
+	for y in 0..<buffer.height {
 		film_y := 2.0 * (f32(y) / f32(buffer.height)) - 1.0;
-		for x: i32 = 0; x < buffer.width; x += 1 {
+		for x in 0..<buffer.width {
 
 			pixel: ^u32 = mem.ptr_offset(base_ptr, int(x + y * buffer.width));
 

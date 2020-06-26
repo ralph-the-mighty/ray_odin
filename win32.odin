@@ -18,15 +18,11 @@ main :: proc() {
 	pl.init(&pl_ctx, "ray");
 
 	//game loop
-	for ; pl_ctx.running ; {
+	for pl_ctx.running {
 		pl.pull(&pl_ctx);
 
-		
 		update(&main_world, &pl_ctx);
 		render(&main_world, &pl_ctx.frame_buffer);
 		pl.push(&pl_ctx);
-		
-		//message loop
-
 	}
 }
